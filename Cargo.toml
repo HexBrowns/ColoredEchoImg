@@ -1,0 +1,16 @@
+[package]
+name = "colored-echo-img"
+version = "1.1.0"
+authors = ["HexBrowns"]
+license = "MIT"
+edition = "2021"
+publish = false
+description = "colored_echo_img.mod2 - frame-history colored echo for AviUtl2"
+
+[lib]
+name = "colored_echo_img"
+crate-type = ["cdylib"]
+
+[dependencies]
+aviutl2 = { version = "0.47", features = ["module"] }
+anyhow = "1"
