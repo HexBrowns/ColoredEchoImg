@@ -6,7 +6,10 @@
 //!   間引き（1 枚おきに捨てる）は残像がフレームごとに出たり消えたりして目立つので採らない。
 //! - **破棄**: `STALE_CALLS` 回のあいだ呼ばれず、かつ `STALE_AFTER` 以上たった履歴を捨てる。
 //!   回数だけだと、オブジェクトが多いときに表示中の履歴まで捨てうる。時間だけだと、
-//!   編集の手を止めていた（何も描いていない）後の再生で表示中の履歴を捨てる。両方を条件にする。
+//!   編集の手を止めていた（何も描いていない）後の再生で表示中の履歴を捨てる。呼ばれたときは両方を条件にする。
+//! - **見回り**（v1.3.1。`janitor.rs`）: 呼ばれたときにしか見ない作りでは、オブジェクトを全部消すと履歴が本体を閉じるまで残る。
+//!   見回りのスレッドが、呼ばれた回数によらず `STALE_AFTER` 呼ばれていない履歴を捨てる（`purge_idle`）。止めて `STALE_AFTER` 以上たってから
+//!   値を変えると、その 1 枚は残像の無い絵になる（再生し直せば戻る）。TimeDisplace_H v1.0.4 と同じ決め方（ユーザーの決定、2026-10-14）
 
 use crate::trail::{self, ProcessParams, TrailState};
 use std::collections::HashMap;
@@ -67,6 +70,7 @@ impl StateStore {
     }
 
     /// 今のフレームを `id` の履歴に積み、上限を守ってから、残像を合成して `pixels` に書き戻す。
+    /// 1 画素でも書き換えたら true（`trail::render`）。
     pub fn process(
         &mut self,
         id: &str,
@@ -75,7 +79,7 @@ impl StateStore {
         h: u32,
         p: &ProcessParams,
         now: Instant,
-    ) {
+    ) -> bool {
         self.tick = self.tick.wrapping_add(1);
         let tick = self.tick;
         self.purge_stale(id, now);
@@ -88,8 +92,9 @@ impl StateStore {
             trail::ingest(&mut slot.state, pixels, w, h, p, can_store);
         }
         self.enforce_budget(id);
-        if let Some(slot) = self.slots.get(id) {
-            trail::render(&slot.state, pixels, w, h, p);
+        match self.slots.get(id) {
+            Some(slot) => trail::render(&slot.state, pixels, w, h, p),
+            None => false,
         }
     }
 
@@ -118,6 +123,22 @@ impl StateStore {
             let idle_time = now.duration_since(s.last_used);
             !(idle_calls > stale_calls && idle_time > stale_after)
         });
+    }
+
+    /// 見回り（`janitor.rs`）から呼ぶ: `stale_after` 以上呼ばれていない履歴を、呼ばれた回数によらず捨てる。
+    /// 戻り値は (捨てた履歴の数, 捨てたバイト数)。
+    pub fn purge_idle(&mut self, now: Instant) -> (usize, usize) {
+        let after = self.stale_after;
+        let (mut count, mut bytes) = (0, 0);
+        self.slots.retain(|_, s| {
+            let keep = now.saturating_duration_since(s.last_used) <= after;
+            if !keep {
+                count += 1;
+                bytes += s.state.bytes();
+            }
+            keep
+        });
+        (count, bytes)
     }
 
     /// 合計が上限を超えていれば、いちばん多く持つ履歴の古いフレームから捨てる。
@@ -232,6 +253,28 @@ mod tests {
         // f=49 は右に物体。左に 1 フレーム前の残像（上限で古い分が欠けても新しい残像は出る）
         assert!(last[3] > 0);
         assert_eq!(last[7], 255);
+    }
+
+    /// 誰も呼ばなくなっても（オブジェクトを全部消した）、見回りが時間だけで捨てる
+    #[test]
+    fn idle_state_is_purged_without_calls() {
+        let mut st = StateStore::with_limits(DEFAULT_BUDGET_BYTES, STALE_CALLS, Duration::from_secs(10));
+        let t0 = Instant::now();
+        for (i, id) in ["a", "b", "c"].iter().enumerate() {
+            for f in 0..4 {
+                let mut cur = vec![9u8, 0, 0, 255, 0, 0, 0, 0];
+                st.process(id, &mut cur, 2, 1, &test_params(f, 12, 1.0), t0 + Duration::from_secs(i as u64));
+            }
+        }
+        let before = st.total_bytes();
+        assert!(before > 0);
+        // 最後に呼ばれてから 10 秒以内は残す（"b" は t0 + 1 秒、"c" は t0 + 2 秒）
+        assert_eq!(st.purge_idle(t0 + Duration::from_secs(11)), (1, before / 3));
+        assert!(!st.contains("a") && st.contains("b") && st.contains("c"));
+        let (n, freed) = st.purge_idle(t0 + Duration::from_secs(13));
+        assert_eq!((n, freed), (2, before - before / 3));
+        assert_eq!((st.total_bytes(), st.len()), (0, 0));
+        assert_eq!(st.purge_idle(t0 + Duration::from_secs(60)), (0, 0));
     }
 
     #[test]

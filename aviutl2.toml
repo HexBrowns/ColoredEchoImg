@@ -1,0 +1,31 @@
+#:schema ./.aviutl2-cli/aviutl2.schema.json
+#
+# ビルドと配布の設定（aviutl2-cli: https://github.com/sevenc-nanashi/aviutl2-cli）。
+#   au2 release   ビルドして release/ に au2pkg とカタログ用の catalog.json を作る
+# project.version は Cargo.toml の version と揃える。
+# スクリプト（.anm2）の正本は assets/。本番の Script/ にあるのは配置した写し。
+
+[project]
+id = "HexBrowns.ColoredEchoImg"
+name = "色付き残像(画像履歴)"
+version = "1.3.1"
+
+[artifacts."colored_echo_img.mod2"]
+build = "cargo build --release"
+source = "target/release/colored_echo_img.dll"
+destination = "Script/ColoredEchoImg/colored_echo_img.mod2"
+
+[artifacts."色付き残像(画像履歴).anm2"]
+source = "assets/色付き残像(画像履歴).anm2"
+destination = "Script/色付き残像(画像履歴).anm2"
+
+[release]
+# インストール時のダイアログに、本体と依存クレートのライセンスを出す
+prebuild = ['copy /b /y LICENSE + THIRD_PARTY_CRATES.md release\package.txt >nul']
+package_template = "release/package.txt"
+package_information = "{name} v{version} by HexBrowns"
+
+[catalog]
+id = "HexBrowns.ColoredEchoImg"
+license_path = { type = "MIT", path = "./LICENSE" }
+download_repo = { owner = "HexBrowns", repo = "ColoredEchoImg" }
