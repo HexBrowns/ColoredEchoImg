@@ -1,4 +1,4 @@
---information:色付き残像(画像履歴) v1.10 by HexBrowns
+--information:色付き残像(画像履歴) v1.11 by HexBrowns
 --label:HexScript
 
 --group:残像
@@ -83,6 +83,12 @@ if not mod then
 end
 
 local buffer_id = string.format("cei_%s_%s", tostring(obj.id), tostring(obj.index))
+-- v1.11: シーンチェンジ・モーションブラーの参照フレームの描画（本体 2.1.14〜）は別の履歴に積む。
+-- 参照フレームは今より前のフレームを毎フレーム描き直すので、同じ履歴に積むと下の「前へ戻った」で毎回捨てていた
+local ok_ref, is_ref = pcall(obj.getinfo, "reference_frame")
+if ok_ref and is_ref == true then
+  buffer_id = buffer_id .. "_ref"
+end
 
 _COLORED_ECHO_IMG_LAST = _COLORED_ECHO_IMG_LAST or {}
 local last = _COLORED_ECHO_IMG_LAST[buffer_id]

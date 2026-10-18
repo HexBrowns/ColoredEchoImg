@@ -1,6 +1,6 @@
 [package]
 name = "colored-echo-img"
-version = "1.3.1"
+version = "1.3.2"
 authors = ["HexBrowns"]
 license = "MIT"
 edition = "2021"
